@@ -1,188 +1,364 @@
 <!DOCTYPE html>
 <html>
-
 <head>
-  <meta charset='utf-8' />
-  <title></title>
-  <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
-  <script src="https://api.mapbox.com/mapbox-gl-js/v1.9.1/mapbox-gl.js"></script>
-  <link href="https://api.mapbox.com/mapbox-gl-js/v1.9.1/mapbox-gl.css" rel="stylesheet" />
-  <script src='https://npmcdn.com/csv2geojson@latest/csv2geojson.js'></script>
-  <script src='https://npmcdn.com/@turf/turf/turf.min.js'></script>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-    }
+    <meta charset="utf-8" />
+    <title>Mapa con selección de patios</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
 
-    #map {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      width: 100%;
-    }
+        /* Estilo para que el mapa ocupe toda la pantalla */
+        #map {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
 
-    /* Popup styling */
+        #map {
+            height: calc(100% - 60px); /* Se reserva espacio para los botones */
+            width: 100%;
+        }
 
-    .mapboxgl-popup {
-      padding-bottom: 5px;
-    }
+        .red-button {
+            background-color: red;
+            color: white;
+            font-size: 20px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            margin-top: 10px;
+            cursor: pointer;
+        }
 
-    .mapboxgl-popup-close-button {
-      display: none;
-    }
+        .green-button {
+            background-color: green;
+            color: white;
+            font-size: 20px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            margin-top: 10px;
+            margin-left: 10px;
+            cursor: pointer;
+        }
 
-    .mapboxgl-popup-content {
-      font: 400 15px/22px 'Source Sans Pro', 'Helvetica Neue', Sans-serif;
-      padding: 0;
-      width: 250px;
-    }
+        .red-button:hover,
+        .green-button:hover {
+            background-color: yellow;
+            color: black;
+        }
 
-    .mapboxgl-popup-content-wrapper {
-      padding: 1%;
-    }
+        .custom-icon {
+            background-color: white;
+            border: 2px solid black;
+            border-radius: 50%;
+            text-align: center;
+            font-weight: bold;
+        }
 
-    .mapboxgl-popup-content h3 {
-      background: rgb(61, 59, 59);
-      text-align: center;
-      color: #fff;
-      margin: 0;
-      display: block;
-      padding: 15px;
-      font-weight: 700;
-      margin-top: -5px;
-    }
+        .green {
+            background-color: green;
+            color: white;
+        }
 
-    .mapboxgl-popup-content h4 {
-      margin: 0;
-      display: block;
-      padding: 10px 3px 10px 10px;
-      font-weight: 400;
-    }
+        .blue {
+            background-color: blue;
+            color: white;
+        }
 
-    .mapboxgl-container {
-      cursor: pointer;
-    }
+        #loader {
+            position: fixed;
+            z-index: 9999;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+        }
 
-    .mapboxgl-popup-anchor-top>.mapboxgl-popup-content {
-      margin-top: 3px;
-    }
+        .loader {
+            border: 6px solid #f3f3f3;
+            border-top: 6px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 2s linear infinite;
+        }
 
-    .mapboxgl-popup-anchor-top>.mapboxgl-popup-tip {
-      border-bottom-color: rgb(61, 59, 59);
-    }
-  </style>
+        .loader-text {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .patio-number {
+            font-size: 14px;
+            font-weight: bold;
+            line-height: 30px;
+        }
+
+        /* Estilos para la ventana flotante */
+        #ventanaFlotante {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: white;
+            padding: 20px;
+            border: 2px solid black;
+            border-radius: 5px;
+            z-index: 9999;
+        }
+
+        #ventanaFlotanteContent {
+            margin-bottom: 10px;
+        }
+
+        /* Estilos para la distancia andada en negrita */
+        #ventanaFlotanteContent strong {
+            font-weight: bold;
+        }
+    </style>
 </head>
-
 <body>
+    <div id="map"></div>
 
-  <div id='map'></div>
-  <script>
+    <!-- Botones -->
+    <div style="position: absolute; top: 10px; left: 10px;">
+        <button id="ejecutarRuta" class="red-button">Ejecutar Ruta</button>
+        <button id="restablecerPatios" class="green-button">Restablecer</button>
+    </div>
 
-    var transformRequest = (url, resourceType) => {
-      var isMapboxRequest =
-        url.slice(8, 22) === "api.mapbox.com" ||
-        url.slice(10, 26) === "tiles.mapbox.com";
-      return {
-        url: isMapboxRequest
-          ? url.replace("?", "?pluginName=sheetMapper&")
-          : url
-      };
-    };
-    //YOUR TURN: add your Mapbox token 
-    mapboxgl.accessToken = '<pk.eyJ1Ijoidm9ydGljZXNlY3JldG8iLCJhIjoiY2tiODhocDQ3MDFydDJyb2I4cXBkdXJ3eCJ9.07bfgaYEnhWKAkxORXYmSw >'; //Mapbox token 
-    var map = new mapboxgl.Map({
-      container: 'map', // container id
-      style: 'mapbox://styles/mapbox/streets-v11', //stylesheet location
-      center: [-122.411464, 37.7852299], // starting position
-      zoom: 10,// starting zoom
-      transformRequest: transformRequest
-    });
+    <!-- Ventana flotante -->
+    <div id="ventanaFlotante">
+        <h3>Ruta Óptima</h3>
+        <p id="ventanaFlotanteContent"></p>
+        <button id="cerrarVentana" class="red-button">Cerrar</button>
+    </div>
 
-    $(document).ready(function () {
-      $.ajax({
-        type: "GET",
-        //YOUR TURN: Replace with csv export link
-        url: '<https://docs.google.com/spreadsheets/d/e/2PACX-1vQ30Zv5DdS8K_idc5lJzzu__PBhCZbAQZtNPardDQfnd01XaVMP40ARogsIevU22oz_BW-Xp7v1GisO/pub?output=csv>',
-        dataType: "text",
-        success: function (csvData) { makeGeoJSON(csvData); }
-      });
+    <!-- Elemento para mostrar la ruta óptima -->
+    <div id="rutaOptima"></div>
 
+    <div id="loader">
+        <div class="loader"></div>
+        <div class="loader-text" id="loaderText">Cargando información...</div>
+    </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-control-geocoder/1.13.0/Control.Geocoder.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-control-geocoder/1.13.0/Control.Geocoder.min.css"></link>
 
-      function makeGeoJSON(csvData) {
-        csv2geojson.csv2geojson(csvData, {
-          latfield: 'Latitude',
-          lonfield: 'Longitude',
-          delimiter: ','
-        }, function (err, data) {
-          map.on('load', function () {
+    <script>
+        var map = L.map('map').setView([39.4699, -0.3763], 13);
 
-            //Add the the layer to the map 
-            map.addLayer({
-              'id': 'csvData',
-              'type': 'circle',
-              'source': {
-                'type': 'geojson',
-                'data': data
-              },
-              'paint': {
-                'circle-radius': 5,
-                'circle-color': "purple"
-              }
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
+            maxZoom: 18,
+        }).addTo(map);
+
+        var selectedPatios = [];
+        var patioCounter = 0;
+
+        function addPatioMarker(lat, lon) {
+            patioCounter++;
+            var iconColor = patioCounter === 1 ? 'green' : 'blue';
+            var icon = L.divIcon({
+                className: 'custom-icon ' + iconColor,
+                html: '<span class="patio-number">' + patioCounter + '</span>',
+                iconSize: [30, 30],
+                iconAnchor: [15, 30],
+                popupAnchor: [0, -30]
+            });
+            var marker = L.marker([lat, lon], { icon: icon }).addTo(map);
+            selectedPatios.push({ number: patioCounter, marker: marker });
+        }
+
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            var R = 6371;
+            var dLat = deg2rad(lat2 - lat1);
+            var dLon = deg2rad(lon2 - lon1);
+            var a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            var distance = R * c;
+            return distance;
+        }
+
+        function deg2rad(deg) {
+            return deg * (Math.PI / 180);
+        }
+
+        function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+            var R = 6371000;
+            var dLat = deg2rad(lat2 - lat1);
+            var dLon = deg2rad(lon2 - lon1);
+            var a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            var distance = R * c;
+            return distance;
+        }
+
+        function calculateTotalDistance(route) {
+            var totalDistance = 0;
+            for (var i = 0; i < route.length - 1; i++) {
+                var currentMarker = route[i].marker.getLatLng();
+                var nextMarker = route[i + 1].marker.getLatLng();
+                var distance = calculateDistanceMeters(
+                    currentMarker.lat,
+                    currentMarker.lng,
+                    nextMarker.lat,
+                    nextMarker.lng
+                );
+                totalDistance += distance;
+            }
+            return totalDistance;
+        }
+
+        function optimizeRoute() {
+            var optimizedRoute = selectedPatios.slice();
+            var improvement = true;
+            while (improvement) {
+                improvement = false;
+                for (var i = 1; i < optimizedRoute.length - 1; i++) {
+                    for (var j = i + 1; j < optimizedRoute.length; j++) {
+                        var routeA = optimizedRoute.slice(0, i);
+                        var routeB = optimizedRoute.slice(i, j + 1).reverse();
+                        var routeC = optimizedRoute.slice(j + 1);
+                        var newRoute = routeA.concat(routeB).concat(routeC);
+                        var currentDistance = calculateTotalDistance(optimizedRoute);
+                        var newDistance = calculateTotalDistance(newRoute);
+                        if (newDistance < currentDistance) {
+                            optimizedRoute = newRoute;
+                            improvement = true;
+                        }
+                    }
+                }
+            }
+            return optimizedRoute;
+        }
+
+        async function getNearestStreet(lat, lng) {
+            var response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+            var data = await response.json();
+            return data.address.road || null;
+        }
+
+        function updateDistanceList() {
+            var rutaOptimaText = '';
+            var totalDistance = 0;
+
+            for (var i = 0; i < selectedPatios.length - 1; i++) {
+                var currentMarker = selectedPatios[i].marker.getLatLng();
+                var nextMarker = selectedPatios[i + 1].marker.getLatLng();
+                var distance = calculateDistanceMeters(
+                    currentMarker.lat,
+                    currentMarker.lng,
+                    nextMarker.lat,
+                    nextMarker.lng
+                );
+                totalDistance += distance;
+                var patioInfo = 'Punto ' + selectedPatios[i].number + ' a Punto ' + selectedPatios[i + 1].number + ': ' + distance.toFixed(2) + ' metros<br>';
+                rutaOptimaText += patioInfo;
+            }
+
+            var rutaOptimaDiv = document.getElementById('rutaOptima');
+            rutaOptimaDiv.innerHTML = '<h3>Ruta Óptima</h3>' + '<p>' + rutaOptimaText + '</p>';
+
+            return totalDistance;
+        }
+
+        async function openOptimizedRouteWindow() {
+            var ventanaFlotante = document.getElementById('ventanaFlotante');
+            var ventanaFlotanteContent = document.getElementById('ventanaFlotanteContent');
+            var loader = document.getElementById('loader');
+            var loaderText = document.getElementById('loaderText');
+            loader.style.display = 'block';
+            loaderText.textContent = 'Cargando información...';
+
+            var optimizedRoute = optimizeRoute();
+            var rutaOptimaText = '';
+            var totalPatios = optimizedRoute.length;
+            var loadedPatios = 0;
+
+            for (var i = 0; i < optimizedRoute.length; i++) {
+                var patioNumber = optimizedRoute[i].number;
+                var patioLatLng = optimizedRoute[i].marker.getLatLng();
+                var nearestStreet = await getNearestStreet(patioLatLng.lat, patioLatLng.lng);
+                if (nearestStreet) {
+                    var patioInfo = 'Punto ' + patioNumber + ': ' + nearestStreet;
+                } else {
+                    var patioInfo = 'Punto ' + patioNumber + ': Latitud ' + patioLatLng.lat.toFixed(4) + ', Longitud ' + patioLatLng.lng.toFixed(4);
+                }
+                patioInfo += '<br>';
+                rutaOptimaText += patioInfo;
+
+                loadedPatios++;
+                loaderText.textContent = 'Cargando información (' + loadedPatios + '/' + totalPatios + ')';
+            }
+
+            var totalDistanceMeters = updateDistanceList();
+            rutaOptimaText += 'Distancia total recorrida: <strong>' + totalDistanceMeters.toFixed(2) + ' metros</strong><br>';
+
+            ventanaFlotanteContent.innerHTML = rutaOptimaText;
+            ventanaFlotante.style.display = 'block';
+
+            loader.style.display = 'none';
+            loaderText.textContent = '';
+        }
+
+        function removePatioMarkers() {
+            for (var i = 0; i < selectedPatios.length; i++) {
+                map.removeLayer(selectedPatios[i].marker);
+            }
+            selectedPatios = [];
+            patioCounter = 0;
+        }
+
+        function onMapClick(e) {
+            addPatioMarker(e.latlng.lat, e.latlng.lng);
+        }
+
+        function ejecutarRuta() {
+            if (selectedPatios.length > 0) {
+                openOptimizedRouteWindow();
+            } else {
+                alert('No has seleccionado ningún punto');
+            }
+        }
+
+        function restablecerPatios() {
+            removePatioMarkers();
+            map.eachLayer(function (layer) {
+                if (layer instanceof L.Polyline) {
+                    map.removeLayer(layer);
+                }
             });
 
+            var rutaOptimaDiv = document.getElementById('rutaOptima');
+            rutaOptimaDiv.innerHTML = '';
+        }
 
-            // When a click event occurs on a feature in the csvData layer, open a popup at the
-            // location of the feature, with description HTML from its properties.
-            map.on('click', 'csvData', function (e) {
-              var coordinates = e.features[0].geometry.coordinates.slice();
+        function cerrarVentanaFlotante() {
+            var ventanaFlotante = document.getElementById('ventanaFlotante');
+            ventanaFlotante.style.display = 'none';
+        }
 
-              //set popup text 
-              //You can adjust the values of the popup to match the headers of your CSV. 
-              // For example: e.features[0].properties.Name is retrieving information from the field Name in the original CSV. 
-              var description = `<h3>` + e.features[0].properties.Name + `</h3>` + `<h4>` + `<b>` + `Address: ` + `</b>` + e.features[0].properties.Address + `</h4>` + `<h4>` + `<b>` + `Phone: ` + `</b>` + e.features[0].properties.Phone + `</h4>`;
-
-              // Ensure that if the map is zoomed out such that multiple
-              // copies of the feature are visible, the popup appears
-              // over the copy being pointed to.
-              while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
-                coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
-              }
-
-              //add Popup to map
-
-              new mapboxgl.Popup()
-                .setLngLat(coordinates)
-                .setHTML(description)
-                .addTo(map);
-            });
-
-            // Change the cursor to a pointer when the mouse is over the places layer.
-            map.on('mouseenter', 'csvData', function () {
-              map.getCanvas().style.cursor = 'pointer';
-            });
-
-            // Change it back to a pointer when it leaves.
-            map.on('mouseleave', 'places', function () {
-              map.getCanvas().style.cursor = '';
-            });
-
-            var bbox = turf.bbox(data);
-            map.fitBounds(bbox, { padding: 50 });
-
-          });
-
-        });
-      };
-    });
-
-
-
-
-  </script>
-
+        map.on('click', onMapClick);
+        document.getElementById('ejecutarRuta').addEventListener('click', ejecutarRuta);
+        document.getElementById('restablecerPatios').addEventListener('click', restablecerPatios);
+        document.getElementById('cerrarVentana').addEventListener('click', cerrarVentanaFlotante);
+    </script>
 </body>
-
 </html>
